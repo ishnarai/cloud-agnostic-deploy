@@ -16,6 +16,9 @@
 name: CD
 
 on:
+  push:
+    branches: [main]
+
   repository_dispatch:
     types: [app-image-built]
 
