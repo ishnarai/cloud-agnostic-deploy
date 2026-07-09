@@ -1,0 +1,27 @@
+# =============================================================================
+# service.yaml (gcp)
+# =============================================================================
+# Byte-for-byte identical across aws/, azure/, and gcp/ folders - included
+# in each per-cloud folder (rather than a single shared location) purely so
+# that "kubectl apply -f kubernetes/$CLOUD_PROVIDER/" applies the COMPLETE
+# set of manifests for a given cloud in one command, without needing to also
+# reference a separate shared directory.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: orion-service
+spec:
+  selector:
+    app: orion
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+  # Changed from LoadBalancer (single-repo version) to ClusterIP here,
+  # because in THIS structure, external traffic entry is the Ingress
+  # resource job (see ingress.yaml) - a more realistic enterprise pattern
+  # where a single Ingress can route to multiple internal Services under
+  # one external IP/domain, rather than every Service provisioning its own
+  # cloud load balancer.

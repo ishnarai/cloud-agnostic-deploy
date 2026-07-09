@@ -1,0 +1,94 @@
+# =============================================================================
+# terraform.yml - REUSABLE workflow
+# =============================================================================
+# Provisions infrastructure for ONE selected cloud. Which cloud is decided
+# entirely by the `cloud_provider` input passed in by the caller (cd.yml) -
+# this workflow itself contains no hardcoded assumption about which cloud
+# will be used on any given run.
+
+name: Terraform Provision
+
+on:
+  workflow_call:
+    inputs:
+      cloud_provider:
+        description: "Which cloud to provision infrastructure for (aws, azure, gcp)"
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AZURE_CREDENTIALS:
+        required: false
+      GCP_SA_KEY:
+        required: false
+      GCP_PROJECT_ID:
+        required: false
+      # All marked `required: false` at the workflow_call level because only
+      # ONE cloud's credentials are actually needed on any given run - the
+      # steps below conditionally use only the relevant ones based on
+      # `inputs.cloud_provider`.
+
+jobs:
+  validate-input:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Validate cloud_provider value
+        run: ./scripts/validate-cloud-provider.sh "${{ inputs.cloud_provider }}"
+
+  terraform:
+    needs: validate-input
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/${{ inputs.cloud_provider }}
+        # Dynamically targets the correct per-cloud Terraform folder based
+        # purely on the input string - this is the same "one variable drives
+        # everything" principle from the single-repo version, now expressed
+        # at the CD-pipeline level.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # --- Cloud-specific authentication (only the matching block runs) ---
+      - name: Configure AWS credentials
+        if: inputs.cloud_provider == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Log in to Azure
+        if: inputs.cloud_provider == 'azure'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Authenticate to Google Cloud
+        if: inputs.cloud_provider == 'gcp'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: |
+          if [ "${{ inputs.cloud_provider }}" = "gcp" ]; then
+            terraform apply -auto-approve -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}"
+          else
+            terraform apply -auto-approve
+          fi
+        # GCP is the one config requiring an explicit -var flag, since we
+        # deliberately gave gcp_project_id no default (Section 7 rationale
+        # carried over unchanged from the single-repo version).

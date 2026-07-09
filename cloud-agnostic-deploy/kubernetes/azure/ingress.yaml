@@ -1,0 +1,28 @@
+# =============================================================================
+# ingress.yaml (Azure)
+# =============================================================================
+# Uses Azure Application Gateway Ingress Controller (AGIC) to provision an
+# Azure Application Gateway in front of the cluster. Same Kubernetes Ingress
+# API shape as AWS's file, but the annotations are entirely Azure-specific.
+#
+# PREREQUISITE: AGIC must be enabled/installed on the AKS cluster (can be
+# enabled as an AKS add-on) for these annotations to take effect.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orion-ingress
+  annotations:
+    kubernetes.io/ingress.class: azure/application-gateway
+    appgw.ingress.kubernetes.io/health-probe-path: /health
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: orion-service
+                port:
+                  number: 80

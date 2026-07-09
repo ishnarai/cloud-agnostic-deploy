@@ -1,0 +1,11 @@
+.env
+.env.local
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,85 @@
+# =============================================================================
+# deploy.yml - REUSABLE workflow
+# =============================================================================
+# Applies Kubernetes manifests and deploys the specified image to the
+# specified cloud's cluster, by delegating to that cloud's deploy.sh script -
+# the workflow's job is authentication + invoking the script, not duplicating
+# the script's logic inline.
+
+name: Deploy to Kubernetes
+
+on:
+  workflow_call:
+    inputs:
+      cloud_provider:
+        description: "Which cloud to deploy to (aws, azure, gcp)"
+        required: true
+        type: string
+      image_tag:
+        description: "Full image reference to deploy (e.g. ghcr.io/org/app:sha)"
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AZURE_CREDENTIALS:
+        required: false
+      GCP_SA_KEY:
+        required: false
+      GCP_PROJECT_ID:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      # --- Cloud-specific authentication (only the matching block runs) ---
+      - name: Configure AWS credentials
+        if: inputs.cloud_provider == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Log in to Azure
+        if: inputs.cloud_provider == 'azure'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Authenticate to Google Cloud
+        if: inputs.cloud_provider == 'gcp'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        if: inputs.cloud_provider == 'gcp'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run deploy script (AWS)
+        if: inputs.cloud_provider == 'aws'
+        run: ./kubernetes/aws/deploy.sh "${{ inputs.image_tag }}"
+
+      - name: Run deploy script (Azure)
+        if: inputs.cloud_provider == 'azure'
+        run: ./kubernetes/azure/deploy.sh "${{ inputs.image_tag }}"
+
+      - name: Run deploy script (GCP)
+        if: inputs.cloud_provider == 'gcp'
+        run: ./kubernetes/gcp/deploy.sh "${{ inputs.image_tag }}" "${{ secrets.GCP_PROJECT_ID }}"
+        # Each deploy.sh call is the SAME invocation shape (image tag as the
+        # main argument) - GCP simply needs one extra argument because a GCP
+        # project ID has no equivalent "default account" the way AWS/Azure's
+        # CLI tools implicitly use whatever account configure-aws-credentials
+        # / azure/login already authenticated.

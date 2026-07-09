@@ -1,0 +1,26 @@
+# =============================================================================
+# ingress.yaml (GCP)
+# =============================================================================
+# Uses GKE's native Ingress controller (GCE) to provision a Google Cloud
+# Load Balancer in front of the cluster. GKE's Ingress class is built in by
+# default on most GKE clusters (no separate controller install needed,
+# unlike AWS/Azure above) - itself a small but real difference worth
+# knowing about between the three clouds.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orion-ingress
+  annotations:
+    kubernetes.io/ingress.class: gce
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: orion-service
+                port:
+                  number: 80
