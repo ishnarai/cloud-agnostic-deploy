@@ -12,11 +12,10 @@ on:
   workflow_call:
     inputs:
       cloud_provider:
-        description: "Which cloud to deploy to (aws, azure, gcp)"
         required: true
         type: string
+
       image_tag:
-        description: "Full image reference to deploy (e.g. ghcr.io/org/app:sha)"
         required: true
         type: string
     secrets:

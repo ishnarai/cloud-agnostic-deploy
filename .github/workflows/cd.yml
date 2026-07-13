@@ -14,52 +14,43 @@
 #      the primary way you'll demo switching clouds for this PoC.
 
 name: CD
-
 on:
-  push:
-    branches: [main]
-
   repository_dispatch:
-    types: [app-image-built]
-
   workflow_dispatch:
     inputs:
       cloud_provider:
-        description: "Which cloud to deploy to"
+        description: "Target cloud provider"
         required: true
-        default: "aws"
-        type: choice
-        options:
-          - aws
-          - azure
-          - gcp
+        default: aws
       image_tag:
-        description: "Full image reference to deploy (leave default to use latest)"
-        required: false
-        default: "ghcr.io/ishnarai/cloud-agnostic-app:latest"
-        type: string
+        description: "Image tag to deploy"
+        required: true
+        default: latest
 
 jobs:
   determine-inputs:
+    name: Resolve deployment inputs
     runs-on: ubuntu-latest
     outputs:
       cloud_provider: ${{ steps.resolve.outputs.cloud_provider }}
       image_tag: ${{ steps.resolve.outputs.image_tag }}
     steps:
-      - name: Resolve deployment inputs based on trigger type
-        id: resolve
+      - id: resolve
         run: |
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "cloud_provider=aws" >> "$GITHUB_OUTPUT"
-            echo "image_tag=${{ github.event.client_payload.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "cloud_provider=aws" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "cloud_provider=${{ inputs.cloud_provider }}" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
           else
-            echo "cloud_provider=${{ inputs.cloud_provider }}" >> "$GITHUB_OUTPUT"
-            echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "cloud_provider=aws" >> $GITHUB_OUTPUT
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
           fi
-        # This step is the bridge between the two trigger types, normalizing
-        # BOTH into the same two values (cloud_provider, image_tag) that the
-        # rest of the pipeline consumes identically - downstream jobs never
-        # need to know or care which trigger fired.
+          # This step is the bridge between the two trigger types, normalizing
+          # BOTH into the same two values (cloud_provider, image_tag) that the
+          # rest of the pipeline consumes identically - downstream jobs never
+          # need to know or care which trigger fired.
 
   terraform:
     needs: determine-inputs

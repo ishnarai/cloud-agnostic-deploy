@@ -37,8 +37,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Validate cloud_provider value
-        run: ./scripts/validate-cloud-provider.sh "${{ inputs.cloud_provider }}"
+      - name: Validate cloud provider
+        run: |
+            chmod +x scripts/validate-cloud-provider.sh
+            bash scripts/validate-cloud-provider.sh "${{ inputs.cloud_provider }}"
 
   terraform:
     needs: validate-input
