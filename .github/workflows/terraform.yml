@@ -2,9 +2,7 @@
 # terraform.yml - REUSABLE workflow
 # =============================================================================
 # Provisions infrastructure for ONE selected cloud. Which cloud is decided
-# entirely by the `cloud_provider` input passed in by the caller (cd.yml) -
-# this workflow itself contains no hardcoded assumption about which cloud
-# will be used on any given run.
+# entirely by the `cloud_provider` input passed in by the caller (cd.yml).
 
 name: Terraform Provision
 
@@ -26,32 +24,29 @@ on:
         required: false
       GCP_PROJECT_ID:
         required: false
-      # All marked `required: false` at the workflow_call level because only
-      # ONE cloud's credentials are actually needed on any given run - the
-      # steps below conditionally use only the relevant ones based on
-      # `inputs.cloud_provider`.
 
 jobs:
   validate-input:
+    name: Validate Cloud Provider
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Validate cloud provider
         run: |
-            chmod +x scripts/validate-cloud-provider.sh
-            bash scripts/validate-cloud-provider.sh "${{ inputs.cloud_provider }}"
+          chmod +x scripts/validate-cloud-provider.sh
+          bash scripts/validate-cloud-provider.sh "${{ inputs.cloud_provider }}"
 
   terraform:
+    name: Provision Infrastructure
     needs: validate-input
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: terraform/${{ inputs.cloud_provider }}
-        # Dynamically targets the correct per-cloud Terraform folder based
-        # purely on the input string - this is the same "one variable drives
-        # everything" principle from the single-repo version, now expressed
-        # at the CD-pipeline level.
 
     steps:
       - name: Checkout code
@@ -60,9 +55,12 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # --- Cloud-specific authentication (only the matching block runs) ---
+      ####################################################################
+      # Cloud Authentication (Skipped in Demo Mode)
+      ####################################################################
+
       - name: Configure AWS credentials
-        if: inputs.cloud_provider == 'aws'
+        if: inputs.cloud_provider == 'aws' && vars.DEMO_MODE != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -70,27 +68,65 @@ jobs:
           aws-region: ap-south-1
 
       - name: Log in to Azure
-        if: inputs.cloud_provider == 'azure'
+        if: inputs.cloud_provider == 'azure' && vars.DEMO_MODE != 'true'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Authenticate to Google Cloud
-        if: inputs.cloud_provider == 'gcp'
+        if: inputs.cloud_provider == 'gcp' && vars.DEMO_MODE != 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      ####################################################################
+      # Demo Mode
+      ####################################################################
+
+      - name: Simulate Terraform Provisioning
+        if: vars.DEMO_MODE == 'true'
+        run: |
+          echo "========================================"
+          echo "          DEMO MODE ENABLED"
+          echo "========================================"
+          echo ""
+          echo "Selected Cloud : ${{ inputs.cloud_provider }}"
+          echo ""
+          echo "Running Terraform Init..."
+          sleep 2
+          echo "Terraform Init Complete"
+          echo ""
+          echo "Running Terraform Plan..."
+          sleep 2
+          echo "Terraform Plan Complete"
+          echo ""
+          echo "Running Terraform Apply..."
+          sleep 2
+          echo "Infrastructure Provisioned Successfully"
+          echo ""
+          echo "========================================"
+
+      ####################################################################
+      # Real Terraform Execution
+      ####################################################################
+
       - name: Terraform Init
+        if: vars.DEMO_MODE != 'true'
         run: terraform init
 
       - name: Terraform Apply
+        if: vars.DEMO_MODE != 'true'
         run: |
           if [ "${{ inputs.cloud_provider }}" = "gcp" ]; then
             terraform apply -auto-approve -var="gcp_project_id=${{ secrets.GCP_PROJECT_ID }}"
           else
             terraform apply -auto-approve
           fi
-        # GCP is the one config requiring an explicit -var flag, since we
-        # deliberately gave gcp_project_id no default (Section 7 rationale
-        # carried over unchanged from the single-repo version).
+
+      ####################################################################
+      # Finish
+      ####################################################################
+
+      - name: Infrastructure Ready
+        run: |
+          echo "Infrastructure stage completed successfully."

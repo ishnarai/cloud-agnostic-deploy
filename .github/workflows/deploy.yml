@@ -2,9 +2,9 @@
 # deploy.yml - REUSABLE workflow
 # =============================================================================
 # Applies Kubernetes manifests and deploys the specified image to the
-# specified cloud's cluster, by delegating to that cloud's deploy.sh script -
-# the workflow's job is authentication + invoking the script, not duplicating
-# the script's logic inline.
+# specified cloud's cluster. When DEMO_MODE=true, the deployment is simulated
+# to demonstrate the cloud-agnostic CI/CD pipeline without requiring actual
+# cloud credentials or infrastructure.
 
 name: Deploy to Kubernetes
 
@@ -18,6 +18,7 @@ on:
       image_tag:
         required: true
         type: string
+
     secrets:
       AWS_ACCESS_KEY_ID:
         required: false
@@ -32,6 +33,7 @@ on:
 
 jobs:
   deploy:
+    name: Deploy Application
     runs-on: ubuntu-latest
 
     steps:
@@ -41,9 +43,12 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
-      # --- Cloud-specific authentication (only the matching block runs) ---
+      ####################################################################
+      # Cloud Authentication (Skipped in Demo Mode)
+      ####################################################################
+
       - name: Configure AWS credentials
-        if: inputs.cloud_provider == 'aws'
+        if: inputs.cloud_provider == 'aws' && vars.DEMO_MODE != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -51,34 +56,82 @@ jobs:
           aws-region: ap-south-1
 
       - name: Log in to Azure
-        if: inputs.cloud_provider == 'azure'
+        if: inputs.cloud_provider == 'azure' && vars.DEMO_MODE != 'true'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Authenticate to Google Cloud
-        if: inputs.cloud_provider == 'gcp'
+        if: inputs.cloud_provider == 'gcp' && vars.DEMO_MODE != 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
-        if: inputs.cloud_provider == 'gcp'
+        if: inputs.cloud_provider == 'gcp' && vars.DEMO_MODE != 'true'
         uses: google-github-actions/setup-gcloud@v2
 
+      ####################################################################
+      # Demo Deployment
+      ####################################################################
+
+      - name: Simulate Kubernetes Deployment
+        if: vars.DEMO_MODE == 'true'
+        run: |
+          echo "========================================"
+          echo "          DEMO MODE ENABLED"
+          echo "========================================"
+          echo ""
+          echo "Target Cloud : ${{ inputs.cloud_provider }}"
+          echo "Container Image : ${{ inputs.image_tag }}"
+          echo ""
+          echo "Connecting to Kubernetes cluster..."
+          sleep 2
+          echo "Cluster connection established."
+          echo ""
+          echo "Applying deployment.yaml..."
+          sleep 2
+          echo "Deployment applied."
+          echo ""
+          echo "Applying service.yaml..."
+          sleep 2
+          echo "Service created."
+          echo ""
+          echo "Applying ingress.yaml..."
+          sleep 2
+          echo "Ingress configured."
+          echo ""
+          echo "Waiting for application rollout..."
+          sleep 2
+          echo ""
+          echo "Application deployed successfully."
+          echo ""
+          echo "========================================"
+
+      ####################################################################
+      # Real Deployment
+      ####################################################################
+
+      - name: Make deployment scripts executable
+        if: vars.DEMO_MODE != 'true'
+        run: chmod +x kubernetes/**/*.sh
+
       - name: Run deploy script (AWS)
-        if: inputs.cloud_provider == 'aws'
+        if: inputs.cloud_provider == 'aws' && vars.DEMO_MODE != 'true'
         run: ./kubernetes/aws/deploy.sh "${{ inputs.image_tag }}"
 
       - name: Run deploy script (Azure)
-        if: inputs.cloud_provider == 'azure'
+        if: inputs.cloud_provider == 'azure' && vars.DEMO_MODE != 'true'
         run: ./kubernetes/azure/deploy.sh "${{ inputs.image_tag }}"
 
       - name: Run deploy script (GCP)
-        if: inputs.cloud_provider == 'gcp'
+        if: inputs.cloud_provider == 'gcp' && vars.DEMO_MODE != 'true'
         run: ./kubernetes/gcp/deploy.sh "${{ inputs.image_tag }}" "${{ secrets.GCP_PROJECT_ID }}"
-        # Each deploy.sh call is the SAME invocation shape (image tag as the
-        # main argument) - GCP simply needs one extra argument because a GCP
-        # project ID has no equivalent "default account" the way AWS/Azure's
-        # CLI tools implicitly use whatever account configure-aws-credentials
-        # / azure/login already authenticated.
+
+      ####################################################################
+      # Finish
+      ####################################################################
+
+      - name: Deployment Complete
+        run: |
+          echo "Deployment stage completed successfully."
