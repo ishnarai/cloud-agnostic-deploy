@@ -2,27 +2,66 @@
 # =============================================================================
 # deploy.sh (GCP)
 # =============================================================================
-# Usage: ./deploy.sh <image_tag> <gcp_project_id>
+# Deploys the application to a Google GKE cluster.
+#
+# Steps:
+#   1. Authenticate with Google Cloud
+#   2. Configure kubectl
+#   3. Render deployment.yaml with the selected Docker image
+#   4. Apply Kubernetes manifests
+#   5. Wait for rollout
+# =============================================================================
 
 set -euo pipefail
 
-IMAGE_TAG="${1:?Usage: ./deploy.sh <image_tag> <gcp_project_id>}"
-GCP_PROJECT_ID="${2:?Usage: ./deploy.sh <image_tag> <gcp_project_id>}"
+FULL_IMAGE="${1:?Usage: ./deploy.sh <full_docker_image> <project_id>}"
+PROJECT_ID="${2:?Usage: ./deploy.sh <full_docker_image> <project_id>}"
+
+ZONE="asia-south1-a"
 CLUSTER_NAME="orion-gke-cluster"
-GCP_ZONE="asia-south1-a"
 
-echo ">> Configuring kubectl for GKE cluster: ${CLUSTER_NAME}"
-gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${GCP_ZONE}" --project "${GCP_PROJECT_ID}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo ">> Applying Kubernetes manifests"
-kubectl apply -f "$(dirname "$0")/deployment.yaml"
-kubectl apply -f "$(dirname "$0")/service.yaml"
-kubectl apply -f "$(dirname "$0")/ingress.yaml"
+echo ""
+echo "========================================="
+echo "Google Cloud Deployment"
+echo "========================================="
+echo ""
 
-echo ">> Setting image to: ${IMAGE_TAG}"
-kubectl set image deployment/orion-deployment orion-app="${IMAGE_TAG}"
+echo "Docker Image"
+echo "${FULL_IMAGE}"
+echo ""
 
-echo ">> Waiting for rollout to complete"
-kubectl rollout status deployment/orion-deployment --timeout=120s
+echo "Obtaining GKE credentials..."
 
-echo ">> Deployment complete."
+gcloud container clusters get-credentials \
+    "${CLUSTER_NAME}" \
+    --zone "${ZONE}" \
+    --project "${PROJECT_ID}"
+
+echo ""
+echo "Rendering Kubernetes manifest..."
+
+sed \
+  "s|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g" \
+  "${SCRIPT_DIR}/deployment.yaml" \
+  > "${SCRIPT_DIR}/deployment-rendered.yaml"
+
+echo ""
+echo "Applying manifests..."
+
+kubectl apply -f "${SCRIPT_DIR}/deployment-rendered.yaml"
+kubectl apply -f "${SCRIPT_DIR}/service.yaml"
+kubectl apply -f "${SCRIPT_DIR}/ingress.yaml"
+
+echo ""
+echo "Waiting for deployment rollout..."
+
+kubectl rollout status deployment/orion-deployment --timeout=180s
+
+rm -f "${SCRIPT_DIR}/deployment-rendered.yaml"
+
+echo ""
+echo "========================================="
+echo "Google Cloud Deployment Successful"
+echo "========================================="

@@ -1,89 +1,158 @@
 # =============================================================================
-# cd.yml - ORCHESTRATOR workflow
+# cd.yml - ORCHESTRATOR WORKFLOW
 # =============================================================================
-# This is the only workflow that is triggered directly.
-# It determines the deployment inputs, then calls the reusable
-# Terraform and Deploy workflows in sequence.
+# Manual Continuous Deployment workflow.
+#
+# CI builds and pushes the Docker image.
+#
+# The user manually selects:
+#   • Cloud Provider
+#   • Docker Image
+#
+# This workflow then:
+#   1. Validates the selected cloud
+#   2. Provisions infrastructure (Terraform)
+#   3. Deploys the selected Docker image
+# =============================================================================
 
 name: CD
 
 on:
-  push:
-    branches:
-      - main
-
-  repository_dispatch:
-    types:
-      - app-image-built
 
   workflow_dispatch:
+
     inputs:
+
       cloud_provider:
-        description: "Target cloud provider"
+        description: "Select Target Cloud Provider"
         required: true
-        default: aws
         type: choice
+        default: aws
+
         options:
           - aws
           - azure
           - gcp
 
       image_tag:
-        description: "Docker image tag to deploy"
+        description: "Full Docker Image (Paste from CI output)"
         required: true
-        default: latest
         type: string
 
 jobs:
-  determine-inputs:
-    name: Resolve deployment inputs
+
+  deployment-summary:
+
+    name: Deployment Configuration
+
     runs-on: ubuntu-latest
 
     outputs:
-      cloud_provider: ${{ steps.resolve.outputs.cloud_provider }}
-      image_tag: ${{ steps.resolve.outputs.image_tag }}
+      cloud_provider: ${{ steps.summary.outputs.cloud_provider }}
+      image_tag: ${{ steps.summary.outputs.image_tag }}
 
     steps:
-      - name: Resolve inputs
-        id: resolve
+
+      - name: Display Deployment Configuration
+
+        id: summary
+
         shell: bash
+
         run: |
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "cloud_provider=aws" >> "$GITHUB_OUTPUT"
-            echo "image_tag=${{ github.event.client_payload.image_tag }}" >> "$GITHUB_OUTPUT"
 
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "cloud_provider=${{ inputs.cloud_provider }}" >> "$GITHUB_OUTPUT"
-            echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "cloud_provider=${{ inputs.cloud_provider }}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
 
-          else
-            # Push event defaults
-            echo "cloud_provider=aws" >> "$GITHUB_OUTPUT"
-            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
-          fi
+          echo ""
+          echo "==============================================="
+          echo "      CLOUD AGNOSTIC DEPLOYMENT"
+          echo "==============================================="
+          echo ""
+
+          echo "Selected Cloud"
+          echo "${{ inputs.cloud_provider }}"
+          echo ""
+
+          echo "Docker Image"
+          echo "${{ inputs.image_tag }}"
+          echo ""
+
+          echo "Terraform"
+          echo "Provision Infrastructure"
+          echo ""
+
+          echo "Deployment"
+          echo "Kubernetes"
+          echo ""
+
+          echo "==============================================="
 
   terraform:
+
     name: Provision Infrastructure
-    needs: determine-inputs
+
+    needs: deployment-summary
 
     uses: ./.github/workflows/terraform.yml
 
     with:
-      cloud_provider: ${{ needs.determine-inputs.outputs.cloud_provider }}
+
+      cloud_provider: ${{ needs.deployment-summary.outputs.cloud_provider }}
 
     secrets: inherit
 
   deploy:
+
     name: Deploy Application
 
     needs:
-      - determine-inputs
+
+      - deployment-summary
       - terraform
 
     uses: ./.github/workflows/deploy.yml
 
     with:
-      cloud_provider: ${{ needs.determine-inputs.outputs.cloud_provider }}
-      image_tag: ${{ needs.determine-inputs.outputs.image_tag }}
+
+      cloud_provider: ${{ needs.deployment-summary.outputs.cloud_provider }}
+
+      image_tag: ${{ needs.deployment-summary.outputs.image_tag }}
 
     secrets: inherit
+
+  completion:
+
+    name: Deployment Complete
+
+    needs:
+
+      - deploy
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Deployment Summary
+
+        run: |
+
+          echo ""
+          echo "==============================================="
+          echo "      DEPLOYMENT FINISHED"
+          echo "==============================================="
+          echo ""
+
+          echo "Cloud Provider"
+          echo "${{ inputs.cloud_provider }}"
+          echo ""
+
+          echo "Docker Image"
+          echo "${{ inputs.image_tag }}"
+          echo ""
+
+          echo "Status"
+          echo "Deployment completed successfully."
+          echo ""
+
+          echo "==============================================="
